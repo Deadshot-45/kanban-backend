@@ -83,7 +83,7 @@ const seedDefaultColumns = async () => {
     const memberCount = await Member.countDocuments();
     if (memberCount === 0) {
       await Member.create({
-        username: "Arun Raj",
+        username: "admin_05",
         role: "admin",
         status: "joined",
       });
