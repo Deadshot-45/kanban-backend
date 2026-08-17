@@ -65,41 +65,11 @@ app.use("/uploads", express.static(uploadDir));
 
 // Seed default Kanban columns and admin member if none exist
 let isSeeded = false;
-const seedDefaultColumns = async () => {
-  if (isSeeded) return;
-  try {
-    const count = await Column.countDocuments();
-    if (count === 0) {
-      const defaults = [
-        { title: "Todo", color: "#6366f1", position: 0 },
-        { title: "In Progress", color: "#f59e0b", position: 1 },
-        { title: "Review", color: "#8b5cf6", position: 2 },
-        { title: "Done", color: "#10b981", position: 3 },
-      ];
-      await Column.insertMany(defaults);
-      console.log("✅ Seeded default Kanban columns");
-    }
-
-    const memberCount = await Member.countDocuments();
-    if (memberCount === 0) {
-      await Member.create({
-        username: "admin_05",
-        role: "admin",
-        status: "joined",
-      });
-      console.log("✅ Seeded default admin member: Arun Raj");
-    }
-    isSeeded = true;
-  } catch (err) {
-    console.error("Error during default seeding:", err);
-  }
-};
 
 // Database Connection Middleware for Serverless (Vercel) & Local
 app.use(async (req, res, next) => {
   try {
     await connection();
-    await seedDefaultColumns();
     next();
   } catch (err) {
     console.error("Database connection middleware error:", err);
