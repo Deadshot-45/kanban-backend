@@ -12,7 +12,7 @@ export const app = express();
 export const server = http.createServer(app);
 export const io = new Server(server, {
   cors: {
-    origin: '*', // For development flexibility; restrict in production
+    origin: process.env.CLIENT_URL, // For development flexibility; restrict in production
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
   },
 });

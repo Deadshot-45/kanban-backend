@@ -1,5 +1,7 @@
 import type { Request, Response } from "express";
+import mongoose from "mongoose";
 import Task from "../models/Task";
+import Column from "../models/Column";
 import Activity from "../models/Activity";
 import { io } from "../lib/socket";
 
@@ -60,47 +62,43 @@ export const createTask = async (req: Request, res: Response) => {
 // Update Task Details (named getTastById to maintain route compatibility)
 export const getTastById = async (req: Request, res: Response) => {
   try {
-    const { title, description, priority, dueDate, assignedTo, user } = req.body;
-    const updated = await Task.findByIdAndUpdate(
-      req.params.id,
-      {
-        title,
-        description,
-        priority,
-        dueDate: dueDate ? new Date(dueDate) : undefined,
-        assignedTo,
-      },
-      { new: true },
-    );
-    if (!updated) return res.status(404).json({ error: "Task not found" });
+    const { user, ...updateData } = req.body;
+    if (updateData.dueDate) {
+      updateData.dueDate = new Date(updateData.dueDate);
+    }
+    const task = await Task.findByIdAndUpdate(req.params.id, updateData, {
+      new: true,
+    });
+    if (!task) return res.status(404).json({ error: "Task not found" });
 
     await logActivity({
       action: 'updated',
-      taskId: updated._id.toString(),
-      taskTitle: updated.title,
+      taskId: task._id.toString(),
+      taskTitle: task.title,
       user: user || 'System',
+      detail: updateData.priority ? `Priority set to ${updateData.priority}` : undefined,
     });
 
     // Broadcast update
-    io.emit("task:updated", updated);
-    res.json(updated);
+    io.emit("task:updated", task);
+    res.json(task);
   } catch (error) {
     res.status(500).json({ error: "Failed to update task" });
   }
 };
 
-// Delete a Task
+// Delete Task
 export const deleteTaskById = async (req: Request, res: Response) => {
   try {
     const task = await Task.findById(req.params.id);
     if (!task) return res.status(404).json({ error: "Task not found" });
 
-    const { columnId } = task;
+    const columnId = task.columnId;
     const taskTitle = task.title;
 
     await Task.findByIdAndDelete(req.params.id);
 
-    // Re-index remaining tasks in this column
+    // Reorder remaining tasks in the column
     const remaining = await Task.find({ columnId }).sort({ position: 1 });
     for (let i = 0; i < remaining.length; i++) {
       remaining[i].position = i;
@@ -122,12 +120,75 @@ export const deleteTaskById = async (req: Request, res: Response) => {
   }
 };
 
+// Reorder & Move Task Across Columns (REST fallback)
+export const moveTask = async (req: Request, res: Response) => {
+  try {
+    const { sourceColumnId, targetColumnId, sourceIndex, targetIndex, user } = req.body;
+    const taskId = String(req.params.id);
+
+    const movingTask = await Task.findById(taskId);
+    if (!movingTask) return res.status(404).json({ error: "Task not found" });
+
+    const taskTitle = movingTask.title;
+
+    if (sourceColumnId === targetColumnId) {
+      const tasks = await Task.find({ columnId: sourceColumnId }).sort({ position: 1 });
+      const filtered = tasks.filter((t) => t._id.toString() !== taskId);
+      filtered.splice(targetIndex, 0, movingTask);
+
+      for (let i = 0; i < filtered.length; i++) {
+        filtered[i].position = i;
+        await filtered[i].save();
+      }
+    } else {
+      const [srcCol, tgtCol] = await Promise.all([
+        Column.findById(sourceColumnId),
+        Column.findById(targetColumnId),
+      ]);
+
+      const sourceTasks = await Task.find({ columnId: sourceColumnId }).sort({ position: 1 });
+      const filteredSource = sourceTasks.filter((t) => t._id.toString() !== taskId);
+      for (let i = 0; i < filteredSource.length; i++) {
+        filteredSource[i].position = i;
+        await filteredSource[i].save();
+      }
+
+      const targetTasks = await Task.find({ columnId: targetColumnId }).sort({ position: 1 });
+      movingTask.columnId = new mongoose.Types.ObjectId(targetColumnId) as any;
+      targetTasks.splice(targetIndex, 0, movingTask);
+
+      for (let i = 0; i < targetTasks.length; i++) {
+        targetTasks[i].position = i;
+        await targetTasks[i].save();
+      }
+
+      await logActivity({
+        action: "moved",
+        taskId,
+        taskTitle,
+        user: user || "System",
+        fromColumn: srcCol?.title || sourceColumnId,
+        toColumn: tgtCol?.title || targetColumnId,
+      });
+    }
+
+    const updatedTasks = await Task.find().sort({ position: 1 });
+    io.emit("board:synced", { tasks: updatedTasks });
+
+    res.json({ message: "Task moved successfully", tasks: updatedTasks });
+  } catch (error) {
+    console.error("Failed to move task:", error);
+    res.status(500).json({ error: "Failed to move task" });
+  }
+};
+
 // Upload Task Attachment
 export const uploadAttachment = async (req: Request, res: Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
+
     const task = await Task.findById(req.params.id);
     if (!task) return res.status(404).json({ error: "Task not found" });
 
