@@ -7,7 +7,7 @@ import fs from "fs";
 import os from "os";
 import Column from "./models/Column";
 import Member from "./models/Member";
-import { app, server } from "./lib/socket";
+import { app, server, io } from "./lib/socket";
 import boardRoutes from "./routes/board.route";
 import columnRoutes from "./routes/column.route";
 import taskRoutes from "./routes/task.route";
@@ -97,6 +97,10 @@ const seedDefaultColumns = async () => {
 
 // Database Connection Middleware for Serverless (Vercel) & Local
 app.use(async (req, res, next) => {
+  // Skip DB connection check for socket.io polling to avoid connection exhaustion
+  if (req.path.startsWith("/socket.io")) {
+    return next();
+  }
   try {
     await connection();
     await seedDefaultColumns();
@@ -104,6 +108,19 @@ app.use(async (req, res, next) => {
   } catch (err) {
     console.error("Database connection middleware error:", err);
     res.status(500).json({ error: "Database connection failed" });
+  }
+});
+
+// Handle Socket.io polling requests in Vercel Serverless environment
+app.all("/socket.io*", (req, res) => {
+  try {
+    if (io && (io as any).engine) {
+      (io.engine as any).handleRequest(req, res);
+    } else {
+      res.status(200).json({ status: "socket_ready", serverless: true });
+    }
+  } catch (err) {
+    res.status(200).json({ status: "socket_serverless_fallback" });
   }
 });
 
