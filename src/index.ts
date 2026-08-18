@@ -57,6 +57,8 @@ app.use(
       return callback(null, true); // Permissive for easy multi-environment deployment
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   }),
 );
 

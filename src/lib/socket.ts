@@ -12,9 +12,14 @@ export const app = express();
 export const server = http.createServer(app);
 export const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL, // For development flexibility; restrict in production
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    origin: (origin, callback) => {
+      // Always mirror origin back to allow localhost, Vercel, and custom domains
+      callback(null, true);
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true,
   },
+  allowEIO3: true,
 });
 
 // --- SOCKET.IO REALTIME EVENT ORCHESTRATION ---
