@@ -17,35 +17,36 @@ const logActivity = async (data: {
     console.error("Failed to log activity:", err);
   }
 };
+const escapeRegex = (text: string) => {
+  return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+};
 
+// POST /api/board/invite
 export const inviteMember = async (req: Request, res: Response) => {
   try {
     const { username, email, role } = req.body;
-
     if (!username || !username.trim()) {
       return res.status(400).json({ error: "Username is required" });
     }
 
-    // Check if member already invited/joined
-    const existingMember = await Member.findOne({ username: username.trim() });
-    if (existingMember) {
-      return res.status(400).json({ error: "Member already invited or joined" });
+    // Check if member already invited or joined (safe regex)
+    const safeUsername = escapeRegex(username.trim());
+    const existing = await Member.findOne({
+      username: { $regex: new RegExp(`^${safeUsername}$`, "i") },
+    });
+
+    if (existing) {
+      return res.status(400).json({
+        error: `A member with the name "${username.trim()}" has already been ${existing.status}.`,
+      });
     }
 
-    // Determine status based on current socket online status
-    const isOnline = Array.from(onlineUsers.values()).some(
-      (u) => u.toLowerCase() === username.trim().toLowerCase()
-    );
-    const status = isOnline ? "joined" : "invited";
-
-    const newMember = new Member({
+    const newMember = await Member.create({
       username: username.trim(),
       email: email ? email.trim() : undefined,
       role: role || "member",
-      status
+      status: "invited",
     });
-
-    await newMember.save();
 
     // Send invitation email if email is provided
     if (email && email.trim()) {
@@ -105,19 +106,20 @@ export const getBoardMembers = async (req: Request, res: Response) => {
 export const checkInvite = async (req: Request, res: Response) => {
   try {
     const { username } = req.query;
-    if (!username || typeof username !== 'string') {
+    if (!username || typeof username !== 'string' || !username.trim()) {
       return res.status(400).json({ error: 'Username is required' });
     }
+    const safeUsername = escapeRegex(username.trim());
     const member = await Member.findOne({
-      username: { $regex: new RegExp(`^${username.trim()}$`, 'i') },
+      username: { $regex: new RegExp(`^${safeUsername}$`, 'i') },
     });
     if (!member) {
       return res.json({ found: false });
     }
-    res.json({ found: true, status: member.status, member });
+    return res.json({ found: true, status: member.status, member });
   } catch (error) {
     console.error('Failed to check invite:', error);
-    res.status(500).json({ error: 'Failed to check invite status' });
+    return res.json({ found: false });
   }
 };
 
