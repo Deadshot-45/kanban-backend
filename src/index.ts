@@ -111,8 +111,8 @@ app.use(async (req, res, next) => {
   }
 });
 
-// Handle Socket.io polling requests in Vercel Serverless environment
-app.all("/socket.io*", (req, res) => {
+// Handle Socket.io polling requests in Vercel Serverless environment (Express 5 compatible)
+app.use("/socket.io", (req, res) => {
   try {
     if (io && (io as any).engine) {
       (io.engine as any).handleRequest(req, res);
@@ -126,7 +126,11 @@ app.all("/socket.io*", (req, res) => {
 
 // Health check endpoint for Vercel
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString(), env: process.env.NODE_ENV || "development" });
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV || "development",
+  });
 });
 
 // --- REST API ROUTE REGISTRATION ---
